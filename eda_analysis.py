@@ -1,116 +1,85 @@
-"""Lab 4 — Descriptive Analytics: Student Performance EDA
-
-Conduct exploratory data analysis on the student performance dataset.
-Produce distribution plots, correlation analysis, hypothesis tests,
-and a written findings report.
-
-Usage:
-    python eda_analysis.py
-"""
 import os
 import pandas as pd
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
+from statsmodels.stats.power import TTestIndPower
 
+class StudentPerformanceAnalyzer:
+    def __init__(self, filepath, output_dir='output'):
+        self.filepath = filepath
+        self.output_dir = output_dir
+        self.df = None
+        os.makedirs(self.output_dir, exist_ok=True)
+        sns.set_theme(style="whitegrid")
 
-def load_and_profile(filepath):
-    """Load the dataset and generate a data profile report.
+    def load_data(self):
+        self.df = pd.read_csv(self.filepath)
+        
+        with open(f'{self.output_dir}/data_profile.txt', 'w') as f:
+            f.write(f"Shape: {self.df.shape}\n\n")
+            f.write(str(self.df.dtypes) + "\n\n")
+            f.write(str(self.df.isnull().sum()) + "\n\n")
+            f.write(str(self.df.describe()))
+        return self
 
-    Args:
-        filepath: path to the CSV file (e.g., 'data/student_performance.csv')
+    def clean_data(self):
+        if 'commute_minutes' in self.df.columns:
+            self.df['commute_minutes'] = self.df['commute_minutes'].fillna(self.df['commute_minutes'].median())
+        
+        if 'scholarship' in self.df.columns:
+            self.df['scholarship'] = self.df['scholarship'].fillna('None')
+        return self
 
-    Returns:
-        DataFrame: the loaded dataset
+    def plot_visuals(self):
+        plt.figure(figsize=(10, 6))
+        sns.histplot(self.df['gpa'], kde=True, color='skyblue')
+        plt.savefig(f'{self.output_dir}/gpa_distribution.png')
+        
+        plt.figure(figsize=(12, 6))
+        sns.boxplot(data=self.df, x='department', y='gpa', hue='department', palette='Set3', legend=False)
+        plt.xticks(rotation=45)
+        plt.savefig(f'{self.output_dir}/gpa_by_dept.png')
 
-    Side effects:
-        Saves a text profile to output/data_profile.txt containing:
-        - Shape (rows, columns)
-        - Data types for each column
-        - Missing value counts per column
-        - Descriptive statistics for numeric columns
-    """
-    # TODO: Load the dataset and report its shape, data types, missing values,
-    #       and descriptive statistics to output/data_profile.txt
-    pass
+        plt.figure(figsize=(10, 8))
+        numeric_df = self.df.select_dtypes(include=[np.number])
+        sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm', fmt=".2f")
+        plt.savefig(f'{self.output_dir}/correlation_heatmap.png')
+        
+        plt.close('all')
+        return self
 
+    def run_statistics(self):
+        groups = [group['gpa'].values for name, group in self.df.groupby('department')]
+        f_stat, p_val_anova = stats.f_oneway(*groups)
+        
+        analysis = TTestIndPower()
+        required_n = analysis.solve_power(effect_size=0.5, power=0.8, alpha=0.05)
+        
+        bootstrap_means = [self.df['gpa'].sample(frac=1, replace=True).mean() for _ in range(10000)]
+        ci_lower, ci_upper = np.percentile(bootstrap_means, [2.5, 97.5])
+        
+        print(f"ANOVA P-Value: {p_val_anova:.4f}")
+        print(f"Required N: {required_n:.2f}")
+        print(f"Bootstrap CI: ({ci_lower:.4f}, {ci_upper:.4f})")
+        return self
 
-def plot_distributions(df):
-    """Create distribution plots for key numeric variables.
-
-    Args:
-        df: pandas DataFrame with the student performance data
-
-    Returns:
-        None
-
-    Side effects:
-        Saves at least 3 distribution plots (histograms with KDE or box plots)
-        as PNG files in the output/ directory. Each plot should have a
-        descriptive title that states what the distribution reveals.
-    """
-    # TODO: Create distribution plots for numeric columns like GPA,
-    #       study hours, attendance, and commute minutes
-    # TODO: Use histograms with KDE overlay (sns.histplot) or box plots
-    # TODO: Save each plot to the output/ directory
-    pass
-
-
-def plot_correlations(df):
-    """Analyze and visualize relationships between numeric variables.
-
-    Args:
-        df: pandas DataFrame with the student performance data
-
-    Returns:
-        None
-
-    Side effects:
-        Saves at least one correlation visualization to the output/ directory
-        (e.g., a heatmap, scatter plot, or pair plot).
-    """
-    # TODO: Compute the correlation matrix for numeric columns
-    # TODO: Create a heatmap or scatter plots showing key relationships
-    # TODO: Save the visualization(s) to the output/ directory
-    pass
-
-
-def run_hypothesis_tests(df):
-    """Run statistical tests to validate observed patterns.
-
-    Args:
-        df: pandas DataFrame with the student performance data
-
-    Returns:
-        dict: test results with keys like 'internship_ttest', 'dept_anova',
-              each containing the test statistic and p-value
-
-    Side effects:
-        Prints test results to stdout with interpretation.
-
-    Tests to consider:
-        - t-test: Does GPA differ between students with and without internships?
-        - ANOVA: Does GPA differ across departments?
-        - Correlation test: Is the correlation between study hours and GPA significant?
-    """
-    # TODO: Run at least two hypothesis tests on patterns you observe in the data
-    # TODO: Report the test statistic, p-value, and your interpretation
-    pass
-
-
-def main():
-    """Orchestrate the full EDA pipeline."""
-    os.makedirs("output", exist_ok=True)
-
-    # TODO: Load and profile the dataset
-    # TODO: Generate distribution plots
-    # TODO: Analyze correlations
-    # TODO: Run hypothesis tests
-    # TODO: Write a FINDINGS.md summarizing your analysis
-
+    def auto_report(self):
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            plt.figure(figsize=(8, 4))
+            sns.kdeplot(self.df[col], fill=True)
+            plt.savefig(f'{self.output_dir}/auto_{col}.png')
+            plt.close()
 
 if __name__ == "__main__":
-    main()
+    PATH = 'data/student_performance.csv'
+    
+    if os.path.exists(PATH):
+        analyzer = StudentPerformanceAnalyzer(PATH)
+        (analyzer.load_data()
+                 .clean_data()
+                 .plot_visuals()
+                 .run_statistics()
+                 .auto_report())
